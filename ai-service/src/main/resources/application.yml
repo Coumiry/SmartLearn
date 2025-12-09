@@ -1,0 +1,14 @@
+server:
+  port: 9004
+
+spring:
+  application:
+    name: ai-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: localhost:8848
+smartlearn:
+  jwt:
+    secret: "SmartLearnAI-Secret-Key-For-HS256-ChangeMe-123456"
+    expire-millis: 86400000   # 24 小时

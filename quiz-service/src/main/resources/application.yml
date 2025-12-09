@@ -1,0 +1,25 @@
+server:
+  port: 9003
+
+spring:
+  application:
+    name: quiz-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: localhost:8848
+  datasource:
+    url: jdbc:mysql://localhost:3306/smartlearn?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+    username: root
+    password: password
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+mybatis-plus:
+  mapper-locations: classpath*:/mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+smartlearn:
+  jwt:
+    secret: "SmartLearnAI-Secret-Key-For-HS256-ChangeMe-123456"
+    expire-millis: 86400000   # 24 小时

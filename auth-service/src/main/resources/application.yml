@@ -1,0 +1,34 @@
+server:
+  port: 9001
+
+spring:
+  application:
+    name: auth-service
+  cloud:
+    nacos:
+      discovery:
+        server-addr: localhost:8848
+        ip: 127.0.0.1
+  datasource:
+    url: jdbc:mysql://localhost:3306/smartlearn?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai
+    username: root
+    password: password
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+mybatis-plus:
+  mapper-locations: classpath*:mapper/**/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: assign_id
+# 方便后面看健康状态（可选）
+management:
+  endpoints:
+    web:
+      exposure:
+        include: '*'
+smartlearn:
+  jwt:
+    secret: "SmartLearnAI-Secret-Key-For-HS256-ChangeMe-123456"
+    expire-millis: 86400000   # 24 小时
