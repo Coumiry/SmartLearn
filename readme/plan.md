@@ -843,29 +843,39 @@ chapterId  String  是
 > - 题目内容来自 `question.content`
 > - 不返回 `correctAnswer` 和 `analysis` 字段，防止提前泄露答案。
 
-------
+---
 
-## Day18：学生提交答案 + 简单自动判分（简答题）
+## Day18：AI 判分 + 基础反馈（分数 + 评语 + 建议）
 
-### 当日目标
+### 当日进度目标
 
-- 学生提交测验答案。
-- 写入 `user_quiz_answer` 表。
-- 基于简答题的简单规则判分：
-  - 去掉首尾空格后，`user_answer` 与 `correct_answer` 完全相等则判为正确，得 1 分；否则 0 分。
-- 返回学生本次测验的总分和每题对错情况。
+- 完成“学生提交测验答案 → quiz-service 调用 ai-service → 写入 user_quiz_answer → 返回分数 + 评语 + 建议”的闭环。
+- 针对每题，AI 至少返回：
+  - `score`（0 ~ 1）
+  - `comment`（简短评语）
+  - `suggestion`（简短学习建议）
 
 ### 涉及表
 
-- `user_quiz_answer`
-- `question`（取 `correct_answer`）
+- `user_quiz_answer`：保存学生答案 + AI 给出的分数和对错。
+- `question`：提供 `content` 和 `correct_answer`，供 AI 判分参考。
 
 ------
 
-### 1. 学生提交测验答案
+### 1）学生提交测验答案（核心入口）
 
-- **URL**：`POST /api/quiz/student/submit`
-- **请求体示例**
+**URL**
+
+- `POST /api/quiz/student/submit`
+
+**功能**
+
+- 接收某次测验的所有题目的学生答案；
+- 对每道题调用 ai-service 做语义评分；
+- 将结果写入 `user_quiz_answer`；
+- 汇总整个测验的总分，并将“分数 + 评语 + 建议 + 解析”一并返回。
+
+**请求体示例**
 
 ```json
 {
@@ -873,25 +883,49 @@ chapterId  String  是
   "answers": [
     {
       "questionId": "1991004071962023001",
-      "userAnswer": "堆存对象，栈存局部变量和调用栈帧"
+      "userAnswer": "堆用来存储对象实例，栈用来存储局部变量和方法调用栈帧"
     },
     {
       "questionId": "1991004071962023002",
-      "userAnswer": "自动回收不再使用的对象内存"
+      "userAnswer": "垃圾回收用于自动回收不再使用的对象内存"
     }
   ]
 }
 ```
 
-- **判分逻辑（第一版简单规则）**：
-  - 对每个答案：
-    - 从 `question` 表查出 `correct_answer`；
-    - `trim(userAnswer)` 与 `trim(correctAnswer)` 完全相等 → `is_correct = true，score = 1`；
-    - 否则 `is_correct = false，score = 0`；
-  - `submit_time` 使用当前时间写入 `user_quiz_answer`。
-  - `totalScore = 所有题 score 之和`。
+说明：
 
-**返回体示例**
+- `quizId`：本次测验 id。
+- `answers`：一题一个对象，绑定 `questionId` 和学生的简答内容。
+
+------
+
+### 2）quiz-service 内部业务流程（概念级）
+
+1. 根据 `quizId` 校验测验存在性；
+2. 读取该测验的题目列表（通过 `quiz_question` + `question`）；
+3. 遍历前端传来的每个 `answers[i]`：
+   - 找到对应题目 `question`：
+     - `content`（题干）
+     - `correct_answer`
+   - 构造 AI 判分请求（见后文 ai-service 接口）。
+   - 接收 AI 返回的：
+     - `score`（例如 0.8）
+     - `comment`（评语）
+     - `suggestion`（后续学习建议）
+   - 向 `user_quiz_answer` 插入记录：
+     - `user_id`：从网关 `X-User-Id`
+     - `quiz_id` / `question_id` / `user_answer`
+     - `score`、`submit_time`
+4. 汇总整张卷子的总分：
+   - `totalScore = 所有题目 score 之和`
+   - `maxTotalScore = 题目数 * 每题满分 (每题一分)`
+
+------
+
+### 3）Day18 返回体设计（包含 AI 评语和建议）
+
+在 Day18 结束时，`POST /api/quiz/student/submit` 的返回体建议长这样：
 
 ```json
 {
@@ -899,97 +933,169 @@ chapterId  String  是
   "msg": "success",
   "data": {
     "quizId": "1991004071962024001",
-    "totalScore": 2,
-    "maxTotalScore": 2,
-    "correctCount": 2,
-    "wrongCount": 0,
+    "totalScore": 1.6,
+    "maxTotalScore": 2.0,
     "details": [
       {
         "questionId": "1991004071962023001",
-        "correct": true,
-        "score": 1
+        "score": 0.8,
+        "maxScore": 1.0,
+        "comment": "回答基本覆盖了堆和栈的核心区别，还可以补充生命周期和线程私有性。",
+        "suggestion": "建议复习 JVM 内存结构相关章节，尤其是各内存区域的生命周期和线程可见性。"
       },
       {
         "questionId": "1991004071962023002",
-        "correct": true,
-        "score": 1
+        "score": 0.8,
+        "maxScore": 1.0,
+        "comment": "说到了自动回收未使用对象，是核心点。",
+        "suggestion": "可以再了解一下 GC 触发条件和常见垃圾回收器的区别。"
       }
     ]
   }
 }
 ```
 
-> 同时为每道题插入一条 `user_quiz_answer` 记录，填充 `user_id`（从网关 X-User-Id 获取）、`quiz_id`、`question_id`、`user_answer`、`is_correct`、`score`、`submit_time` 等。
+Day18 的重点：
+
+- 这一步**先不返回解析（analysis）**，只完成“AI 打分 + 评语 + 建议”的链路；
+- 解析在 Day19 用 DB 字段接上。
 
 ------
 
-## Day19：AI 解题讲解（ai-service 接入）
+### 4）ai-service：简答题评分接口（Day18 引入）
 
-### 当日目标
+**URL**
 
-- quiz-service 调用 ai-service 的解析接口，给出“AI 解析文字”。
-- 学生在查看做题结果或错题时，可以点击“查看 AI 解析”。
+- `POST /api/ai/grade-short-answer`
 
-### 涉及服务
+**功能**
 
-- `quiz-service`（封装调用）
-- `ai-service`（对外暴露解析接口）
+- 根据题干、标准答案、学生答案为简答题打分，并返回语义相似度、简短评语和学习建议。
 
-------
-
-### 1. ai-service：题目解析接口
-
-- **URL（对外）**：`POST /api/ai/explain`
-- **请求体（由 quiz-service 调用时构造）**
+**请求体（由 quiz-service 调用）**
 
 ```json
 {
   "questionContent": "请简要说明 JVM 中堆和栈的区别。",
   "correctAnswer": "堆用于存放对象实例，栈用于存放局部变量和方法调用栈帧……",
-  "userAnswer": "堆存对象，栈存变量和调用栈",
-  "knowledgePoint": "Java 基础/JVM 内存结构"
+  "userAnswer": "堆存对象实例，栈存局部变量和调用栈帧",
+  "maxScore": 1.0
 }
 ```
 
-**返回体示例**
+**返回体（ai-service 内部约定）**
 
 ```json
 {
   "code": 0,
   "msg": "success",
   "data": {
-    "analysis": "正确答案需要说明堆用于存放对象实例，栈用于存放局部变量和栈帧。你的回答抓住了主要点，但可以补充说明生命周期和是否线程私有等细节。"
+    "score": 0.8,
+    "maxScore": 1.0,
+    "comment": "回答抓住了对象/局部变量/栈帧等核心要点，略有简略。",
+    "suggestion": "建议再对比一下堆和栈在生命周期和线程可见性上的区别。"
   }
 }
 ```
 
 ------
 
-### 2. 学生端：获取某题 AI 解析
+## Day19：补全结果视图 + 接上“解析（analysis）”字段
 
-- **URL**：`GET /api/quiz/student/explain/{questionId}`
-- **功能**：
-  1. 根据当前用户 & 最近一次测验记录，从 `user_quiz_answer` 查到该题的 `user_answer`
-  2. 从 `question` 表查 `content`、`correct_answer`、`knowledge_point`
-  3. 调用 ai-service `/api/ai/explain`
-  4. 返回 AI 解析文本。
+Day18 已经让 `/submit` 返回了分数 + 评语 + 建议，Day19 的重点是：
 
-**返回体示例**
+- 把“解析”接上：从 `question.analysis` 返回；
+- 明确“即时返回”和“结果查询”的一致结构，为 Day21 的 `/result/{quizId}` 复用。
+
+### 当日进度目标
+
+1. **扩展 Day18 返回体，在 details 中增加“解析（analysis）”字段：**
+   - 解析来源：`question.analysis` 字段；
+   - 不是 AI 生成。
+2. **定义一个统一的“题目结果 DTO 结构”，既用于 `/submit` 返回，也用于 `/result/{quizId}`。**
+
+------
+
+### 1）解析字段整合到 /submit 返回中
+
+在 Day19，我们在 Day18 的 `details[]` 中，增加解析字段：
 
 ```json
 {
   "code": 0,
   "msg": "success",
   "data": {
-    "questionId": "1991004071962023001",
-    "userAnswer": "堆存对象，栈存变量和调用栈",
-    "correctAnswer": "堆用于存放对象实例，栈用于存放局部变量和方法调用栈帧……",
-    "analysisFromAi": "正确答案需要说明堆用于存放对象实例，栈用于存放局部变量和栈帧……"
+    "quizId": "1991004071962024001",
+    "totalScore": 1.6,
+    "maxTotalScore": 2.0,
+    "details": [
+      {
+        "questionId": "1991004071962023001",
+        "content": "请简要说明 JVM 中堆和栈的区别。",
+        "userAnswer": "堆存对象实例，栈存局部变量和调用栈帧",
+        "correctAnswer": "堆用于存放对象实例，栈用于存放局部变量和方法调用栈帧……",
+        "analysis": "解析：可从存储内容、生命周期、线程私有性三个方面比较堆与栈。",
+        "knowledgePoint": "Java 基础/JVM 内存结构",
+        "score": 0.8,
+        "maxScore": 1.0,
+        "comment": "回答抓住了对象/局部变量/栈帧等核心要点。",
+        "suggestion": "建议复习 JVM 内存结构相关章节。"
+      }
+    ]
   }
 }
 ```
 
+说明：
+
+- `analysis`：从 `question.analysis` 直接查出来；
+- 现在“这个接口一个 response，就同时带上：**分数 + 评语 + 建议 + 解析**”，满足你想合并 Day18/Day19 的要求。
+
 ------
+
+### 2）统一“结果 DTO”，为 Day21 的 `/result/{quizId}` 做准备
+
+在结构设计层面，你可以把上面的 `details[]` 抽象为一个统一的 **QuestionResultDTO**，字段包含：
+
+- `questionId`
+- `content`
+- `userAnswer`
+- `correctAnswer`
+- `analysis`（来自 DB）
+- `knowledgePoint`
+- `score`（AI打分）
+- `maxScore`
+- `comment`（AI 评语）
+- `suggestion`（AI 建议）
+
+然后：
+
+- `POST /api/quiz/student/submit` 直接返回这一结构（“即时结果视图”）；
+- `GET /api/quiz/student/result/{quizId}` 在 Day21 基于 `user_quiz_answer` + `question` 再组装一次同样的结构（“历史结果视图”）。
+
+这样，前端只需要针对一种数据结构做结果展示组件：
+
+- 提交后立即展示一版；
+- 以后从“错题本”或“历史测验列表”里再进入查看结果，也是同样的结构。
+
+------
+
+## 小结：Day18+Day19 
+
+到 Day19 结束时，应该达到这样一个状态：
+
+1. 学生调用 `POST /api/quiz/student/submit` 时：
+   - 后端使用 ai-service 对每题进行语义判分；
+   - `user_quiz_answer` 落库了分数和对错；
+   - 前端得到的 response 中，每题都有：
+     - 分数（score）
+     - AI 评语（comment）
+     - AI 建议（suggestion）
+     - 静态解析（analysis，来自 question 表）
+2. 这个 per-question 结果结构已经稳定，可以被：
+   - Day20 的错题本（/student/wrong）；
+   - Day21 的测验结果查看（/student/result/{quizId}）
+     直接复用或简化后复用。
 
 ## Day20：错题本接口
 

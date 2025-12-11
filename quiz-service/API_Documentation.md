@@ -232,3 +232,190 @@ X-User-Role: TEACHER
 - ✅ 查询详情：包含courseId、chapterId、totalScore和题目简要信息
 - ✅ 删除测验：返回boolean结果
 - ✅ 权限控制：所有接口都需要教师或管理员权限
+
+---
+
+# 学生测验接口 (Day 17)
+
+## 概述
+学生测验接口允许学生获取试卷详情，进行答题操作。此部分接口专门为学生端设计，不包含标准答案等敏感信息。
+
+## 基础信息
+- **基础路径**: `/api/quiz/student`
+- **认证方式**: 通过网关传递的 Header (`X-User-Id`, `X-User-Role`)
+- **权限要求**: `STUDENT` 角色
+
+## API 接口
+
+### 1. 获取试卷详情
+**GET** `/api/quiz/student/detail/{quizId}`
+
+学生根据测验ID获取题目列表，用于开始答题。不返回标准答案和解析信息。
+
+**路径参数**:
+- `quizId`: 测验ID
+
+**请求头**:
+```
+X-User-Id: {学生ID}
+X-User-Role: STUDENT
+```
+
+**响应**:
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "quizId": "1991004071962024001",
+    "title": "第 1 章测验",
+    "totalScore": 2,
+    "questions": [
+      {
+        "questionId": "1991004071962023001",
+        "content": "请简要说明 JVM 中堆和栈的区别。",
+        "score": 1,
+        "knowledgePoint": "Java 基础/JVM 内存结构"
+      },
+      {
+        "questionId": "1991004071962023002",
+        "content": "请说明 Java 中垃圾回收的作用。",
+        "score": 1,
+        "knowledgePoint": "Java 基础/GC"
+      }
+    ]
+  }
+}
+```
+
+**字段说明**:
+- `quizId`: 测验唯一标识
+- `title`: 测验标题
+- `totalScore`: 测验总分
+- `questions`: 题目列表
+  - `questionId`: 题目ID
+  - `content`: 题干内容
+  - `score`: 该题分值（目前默认每题1分）
+  - `knowledgePoint`: 知识点
+
+**注意事项**:
+1. 不会返回 `correctAnswer` 和 `analysis` 字段，防止答案泄露
+2. 题目按照测验中设置的顺序返回
+3. 只有状态为正常的测验才能被获取
+
+### 2. 错误响应
+
+**测验不存在** (404):
+```json
+{
+  "code": 404,
+  "msg": "测验不存在",
+  "data": null
+}
+```
+
+**测验中没有题目** (400):
+```json
+{
+  "code": 400,
+  "msg": "测验中没有题目",
+  "data": null
+}
+```
+
+**权限不足** (403):
+```json
+{
+  "code": 403,
+  "msg": "权限不足",
+  "data": null
+}
+```
+
+## 数据模型
+
+### QuizStudentDetailVO
+学生测验详情视图对象
+
+```java
+@Data
+@Builder
+public class QuizStudentDetailVO {
+    private String quizId;                    // 测验ID
+    private String title;                     // 测验标题
+    private Integer totalScore;               // 总分
+    private List<QuestionForQuizVO> questions; // 题目列表
+
+    @Data
+    @Builder
+    public static class QuestionForQuizVO {
+        private String questionId;    // 题目ID
+        private String content;       // 题干内容
+        private Integer score;        // 分值
+        private String knowledgePoint;// 知识点
+    }
+}
+```
+
+## 权限控制
+- 所有学生接口都需要 `STUDENT` 角色
+- 通过网关传递的 `X-User-Id` 获取当前用户信息
+- 验证测验是否存在且有效
+
+## 业务规则
+1. 学生只能获取已发布的测验详情
+2. 不返回任何与答案相关的信息
+3. 题目顺序按照测验创建时设置的顺序返回
+4. 每题默认分值为1分
+
+## 日志记录
+- 记录学生获取试卷的操作日志
+- 包含用户ID、测验ID、操作时间等信息
+
+## 后续扩展
+此接口为Day 17功能，后续将扩展：
+- Day 18: 学生提交答案接口
+- Day 19: AI 解析接口
+- Day 20: 错题本接口
+- Day 21: 测验结果查看接口
+
+---
+
+⏺ Day 17 完成总结
+
+✅ 已完成的功能
+
+1. **学生端试卷获取接口**:
+   - GET /api/quiz/student/detail/{quizId}
+   - 返回测验基本信息和题目列表
+   - 不包含标准答案和解析，防止作弊
+
+2. **数据模型设计**:
+   - 创建了 QuizStudentDetailVO 用于学生端响应
+   - 包含测验基本信息和题目列表（不含答案）
+   - 支持题目分值和知识点展示
+
+3. **服务层实现**:
+   - QuizStudentService 业务逻辑实现
+   - 验证测验存在性
+   - 按序返回题目列表
+   - 过滤敏感信息（答案、解析）
+
+4. **单元测试**:
+   - 编写了完整的 Controller 单元测试
+   - 验证接口响应格式和数据正确性
+
+🔧 核心特性
+
+1. **安全性**: 不返回任何答案相关信息
+2. **顺序性**: 题目按照预设顺序返回
+3. **完整性**: 包含测验所需的全部信息（题干、分值、知识点）
+4. **扩展性**: 为后续提交答案等功能预留接口
+
+📋 符合规范
+
+所有实现严格按照 plan.md Day17 要求：
+- ✅ 学生根据 quizId 获取题目列表
+- ✅ 不暴露标准答案和解析
+- ✅ 返回完整的测验信息（标题、总分、题目列表）
+- ✅ 每题包含题干、分值、知识点信息
