@@ -1,13 +1,18 @@
 package com.smartlearn.quiz.vo;
 
-import com.smartlearn.quiz.entity.Question;
+import lombok.AllArgsConstructor;
 import lombok.Data;
 
 import java.util.List;
 
 @Data
+@AllArgsConstructor
 public class QuizDetailVO {
-    private String quizId;
+    private String id;
+    private String courseId;
+    private String chapterId;
     private String title;
-    private List<Question> questions;
+    private Integer totalScore;
+    private List<QuizQuestionItemVO> questions;
 }
+

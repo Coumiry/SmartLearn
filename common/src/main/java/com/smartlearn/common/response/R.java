@@ -7,6 +7,7 @@ public class R<T> {
     private Integer code;
     private String msg;
     private T data;
+    private Integer Imsg;
 
     public static <T> R<T> ok() {
         R<T> r = new R<>();
@@ -26,6 +27,13 @@ public class R<T> {
     public static <T> R<T> fail(String msg) {
         R<T> r = new R<>();
         r.setCode(-1);
+        r.setMsg(msg);
+        return r;
+    }
+
+    public static <T> R<T> fail(Integer code, String msg) {
+        R<T> r = new R<>();
+        r.setCode(code);
         r.setMsg(msg);
         return r;
     }

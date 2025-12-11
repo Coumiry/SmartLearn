@@ -8,4 +8,6 @@ import lombok.Data;
 public class QuizListItemVO {
     private String id;
     private String title;
+    private Integer totalScore;
+    private String createdTime;
 }

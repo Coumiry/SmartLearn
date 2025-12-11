@@ -9,8 +9,10 @@ import com.smartlearn.quiz.mapper.QuestionMapper;
 import com.smartlearn.quiz.mapper.QuizMapper;
 import com.smartlearn.quiz.mapper.QuizQuestionMapper;
 import com.smartlearn.quiz.service.QuizManageService;
+import com.smartlearn.quiz.vo.QuizCreateResponseVO;
 import com.smartlearn.quiz.vo.QuizDetailVO;
 import com.smartlearn.quiz.vo.QuizListItemVO;
+import com.smartlearn.quiz.vo.QuizQuestionItemVO;
 import jakarta.annotation.Resource;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -34,19 +36,33 @@ public class QuizManageServiceImpl implements QuizManageService {
 
     @Override
     @Transactional
-    public String createQuiz(QuizCreateDTO dto, String teacherId) {
+    public QuizCreateResponseVO createQuiz(QuizCreateDTO dto, String teacherId) {
 
         // 1) 校验题目存在
         if (dto.getQuestionIds() == null || dto.getQuestionIds().isEmpty()) {
             throw new RuntimeException("题目列表不能为空");
         }
-        // 可选：批量查询 question 是否存在
+        // 批量查询 question 是否存在，并获取不存在的题目信息
+        List<Question> existingQuestions = questionMapper.selectBatchIds(dto.getQuestionIds());
+        List<String> existingQuestionIds = existingQuestions.stream()
+                .map(Question::getId)
+                .toList();
 
+        // 找出所有不存在的题目ID
+        List<String> nonExistentIds = dto.getQuestionIds().stream()
+                .filter(id -> !existingQuestionIds.contains(id))
+                .toList();
+
+        if (!nonExistentIds.isEmpty()) {
+            String errorMsg = "以下题目不存在: " + String.join(", ", nonExistentIds);
+            throw new RuntimeException(errorMsg);
+        }
         // 2) 插入 quiz
         Quiz quiz = new Quiz();
         quiz.setTitle(dto.getTitle());
         quiz.setCourseId(dto.getCourseId());
         quiz.setChapterId(dto.getChapterId());
+        quiz.setTotalScore(dto.getQuestionIds().size()); // 默认每题1分
         quiz.setCreatedBy(teacherId);
         quiz.setCreatedTime(LocalDateTime.now());
 
@@ -60,8 +76,43 @@ public class QuizManageServiceImpl implements QuizManageService {
             quizQuestionMapper.insert(record);
         }
 
-        return quiz.getId();
+        // 4) 构建返回对象
+        return new QuizCreateResponseVO(
+                quiz.getId(),
+                quiz.getCourseId(),
+                quiz.getChapterId(),
+                quiz.getTitle(),
+                quiz.getTotalScore(),
+                quiz.getCreatedBy(),
+                quiz.getCreatedTime() != null ? quiz.getCreatedTime().toString() : null,
+                quiz.getUpdatedTime() != null ? quiz.getUpdatedTime().toString() : null
+        );
     }
+
+    @Override
+    @Transactional
+    public boolean deleteQuiz(String quizId) {
+        if (quizId == null) {
+            throw new RuntimeException("测验ID不能为空");
+        }
+
+        // 1) 检查测验是否存在
+        Quiz quiz = quizMapper.selectById(quizId);
+        if (quiz == null) {
+            throw new RuntimeException("测验不存在");
+        }
+
+        // 2) 删除测验题目关联记录
+        quizQuestionMapper.delete(
+                Wrappers.lambdaQuery(QuizQuestion.class)
+                        .eq(QuizQuestion::getQuizId, quizId)
+        );
+
+        // 3) 删除测验主记录
+        int result = quizMapper.deleteById(quizId);
+        return result > 0;
+    }
+
     @Override
     public List<QuizListItemVO> listByChapter(String chapterId) {
         List<Quiz> list = quizMapper.selectList(
@@ -71,7 +122,8 @@ public class QuizManageServiceImpl implements QuizManageService {
         );
 
         return list.stream()
-                .map(q -> new QuizListItemVO(q.getId(), q.getTitle()))
+                .map(q -> new QuizListItemVO(q.getId(), q.getTitle(), q.getTotalScore(),
+                    q.getCreatedTime() != null ? q.getCreatedTime().toString() : null))
                 .collect(Collectors.toList());
     }
     @Override
@@ -94,12 +146,19 @@ public class QuizManageServiceImpl implements QuizManageService {
         // 3) 查询题目内容（批量）
         List<Question> questions = questionMapper.selectBatchIds(qids);
 
-        // 4) 组装返回
-        QuizDetailVO vo = new QuizDetailVO();
-        vo.setQuizId(quizId);
-        vo.setTitle(quiz.getTitle());
-        vo.setQuestions(questions);
+        // 4) 组装题目简要信息
+        List<QuizQuestionItemVO> questionItems = questions.stream()
+                .map(q -> new QuizQuestionItemVO(q.getId(), q.getContent(), q.getKnowledgePoint()))
+                .collect(Collectors.toList());
 
-        return vo;
+        // 5) 组装返回
+        return new QuizDetailVO(
+                quiz.getId(),
+                quiz.getCourseId(),
+                quiz.getChapterId(),
+                quiz.getTitle(),
+                quiz.getTotalScore(),
+                questionItems
+        );
     }
 }

@@ -498,299 +498,618 @@
 
 # 具体每日计划（可直接执行）
 
-------
+统一约定：
 
-# **第 15 天：数据表设计 + quiz-service 基础结构**
-
-你要创建 quiz-service 的所有核心表：
-
-### 1）题目表（question）
-
-字段：
-
-- id
-- question_type（SINGLE、MULTI、TRUE_FALSE、SHORT）
-- content（题干）
-- correct_answer（JSON 或字符串）
-- analysis（预置解析，可空）
-- knowledge_point（知识点，可空）
-- created_by（教师）
-- created_time, updated_time
-
-### 2）题目选项表（question_option）
-
-用于选择题：
-
-- id
-- question_id
-- option_key（A/B/C/D）
-- content
-
-### 3）测验表（quiz）
-
-- id
-- course_id
-- chapter_id
-- title
-- total_score（默认每题 1 分，第一版可固定）
-- created_by
-- created_time
-
-### 4）测验题目关联表（quiz_question）
-
-- id
-- quiz_id
-- question_id
-
-### 5）用户作答表（user_quiz_answer）
-
-- id
-- user_id
-- quiz_id
-- question_id
-- user_answer（字符串或 JSON）
-- is_correct（0/1）
-- score
-- submit_time
-
-> 第 15 天目标：
->
-> - 创建实体 + mapper
-> - 数据库表确认可工作
-> - quiz-service 的启动、路由在 gateway 中打通
-
-------
-
-# **第 16 天：题目管理接口（教师端）**
-
-你要完成“老师创建题目”的功能，包括：
-
-## 教师 API：
-
-### `POST /quiz/manage/question/create`
-
-入参 DTO 示例：
+- 网关前缀为 `/api`，quiz-service 的所有接口对外形如：`/api/quiz/...`。
+- 返回结构统一为：
 
 ```json
 {
-  "questionType": "SINGLE",
-  "content": "Java 中用于创建对象的是哪个关键字？",
-  "correctAnswer": "new",
-  "options": [
-    {"optionKey": "A", "content": "class"},
-    {"optionKey": "B", "content": "int"},
-    {"optionKey": "C", "content": "new"},
-    {"optionKey": "D", "content": "void"}
-  ],
-  "knowledgePoint": "Java 基础"
+  "code": 0,
+  "msg": "success",
+  "data": ...
 }
 ```
 
-### `PUT /quiz/manage/question/update/{id}`
+------
 
-### `DELETE /quiz/manage/question/delete/{id}`
+## Day15：梳理题目模型 + 完成简答题题库管理（教师端）
 
-### `GET /quiz/manage/question/list?page=1&size=10`
+### 当日目标
 
-可加筛选参数：知识点 / 题型。
+- 明确并对齐题库只支持简答题（`question_type` 字段实际仅用 `SHORT`）的模型。
+- 完成题目管理的完整 CRUD 接口（教师端），与项目进度文档保持一致。
 
-> 第 16 天目标：
->
-> - 完成题目的 CRUD
-> - 前端管理员/老师页面可以管理题库（最简单表格即可）
+### 涉及表
+
+- `question`：题目表，只用简答题相关字段。
 
 ------
 
-# **第 17 天：测验（Quiz）管理接口**
+### 1. 创建简答题
 
-完成章节测验创建能力。
+- **URL**：`POST /api/quiz/manage/question/create`
+- **权限**：教师 / ADMIN
+- **功能**：教师创建简答题，保存到 `question` 表。
 
-## 教师 API：
-
-### `POST /quiz/manage/create`
+**请求体示例**
 
 ```json
 {
-  "courseId": 1,
-  "chapterId": 10,
-  "title": "Java 第 1 章测试",
-  "questionIds": [1, 2, 3, 4, 5]
+  "questionType": "SHORT",
+  "content": "请简要说明 JVM 中堆和栈的区别。",
+  "correctAnswer": "堆用于存放对象实例，栈用于存放局部变量和方法调用栈帧……",
+  "analysis": "从存储内容、生命周期、是否线程私有等角度描述。",
+  "knowledgePoint": "Java 基础/JVM 内存结构"
 }
 ```
 
-### `GET /quiz/manage/{chapterId}/list`
-
-### `GET /quiz/manage/detail/{quizId}`
-
-展示测验题目。
-
-> 第 17 天目标：
-> 章节能创建测验 → 学生页面可点击“开始测验”。
-
-------
-
-# **第 18 天：学生测验接口（答题 / 判分）**
-
-学生端逻辑开始上线。
-
-## 查询试卷
-
-### `GET /quiz/student/detail/{quizId}`
-
-返回题目 + 选项。
-
-## 提交答案
-
-### `POST /quiz/student/submit`
-
-入参示例：
+**返回体示例**
 
 ```json
 {
-  "quizId": 99,
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "id": "1991004071962023001",
+    "questionType": "SHORT",
+    "content": "请简要说明 JVM 中堆和栈的区别。",
+    "correctAnswer": "堆用于存放对象实例，栈用于存放局部变量和方法调用栈帧……",
+    "analysis": "从存储内容、生命周期、是否线程私有等角度描述。",
+    "knowledgePoint": "Java 基础/JVM 内存结构",
+    "createdBy": "当前教师ID",
+    "createdTime": "2025-11-27T14:30:00",
+    "updatedTime": "2025-11-27T14:30:00"
+  }
+}
+```
+
+------
+
+### 2. 更新简答题
+
+- **URL**：`PUT /api/quiz/manage/question/update/{id}`
+- **功能**：更新题干、标准答案、解析、知识点等。
+
+**请求体示例**
+
+```json
+{
+  "questionType": "SHORT",
+  "content": "更新后的题干内容...",
+  "correctAnswer": "更新后的标准答案...",
+  "analysis": "更新后的解析...",
+  "knowledgePoint": "更新后的知识点标签"
+}
+```
+
+**返回体示例**
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "id": "1991004071962023001",
+    "questionType": "SHORT",
+    "content": "更新后的题干内容...",
+    "correctAnswer": "更新后的标准答案...",
+    "analysis": "更新后的解析...",
+    "knowledgePoint": "更新后的知识点标签",
+    "createdBy": "创建教师ID",
+    "createdTime": "2025-11-27T14:30:00",
+    "updatedTime": "2025-11-27T14:40:00"
+  }
+}
+```
+
+------
+
+### 3. 删除简答题
+
+- **URL**：`DELETE /api/quiz/manage/question/delete/{id}`
+- **功能**：删除题目，并删除对应 `quiz_question` 关联记录。
+
+**返回体示例**
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": true
+}
+```
+
+------
+
+### 4. 分页查询题目列表（教师端）
+
+- **URL**：`GET /api/quiz/manage/question/list`
+- **查询参数**
+
+```text
+pageNo        Integer  否  默认 1
+pageSize      Integer  否  默认 10
+questionType  String   否  题型过滤，如 SHORT
+knowledgePoint String  否  按知识点模糊搜索，如 "JVM"
+keyword       String   否  按题干内容模糊搜索，如 "堆和栈"
+```
+
+**返回体示例**
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "records": [
+      {
+        "id": "1991004071962023001",
+        "questionType": "SHORT",
+        "content": "请简要说明 JVM 中堆和栈的区别。",
+        "knowledgePoint": "Java 基础/JVM 内存结构",
+        "createdBy": "教师ID",
+        "createdTime": "2025-11-27T14:30:00"
+      }
+    ],
+    "total": 1,
+    "size": 10,
+    "current": 1
+  }
+}
+```
+
+------
+
+## Day16：测验（Quiz）管理接口（教师端）
+
+### 当日目标
+
+- 基于 `quiz`、`quiz_question` 表，实现章节级测验管理：创建、查看、删除测验。
+- 每个测验是一组简答题，与课程/章节绑定。
+
+### 涉及表
+
+- `quiz`：测验主表
+- `quiz_question`：测验题目关联表
+
+------
+
+### 1. 创建测验
+
+- **URL**：`POST /api/quiz/manage/quiz/create`
+- **功能**：为某课程章节创建一个测验，并关联一组题目。
+
+**请求体示例**
+
+```json
+{
+  "courseId": "1991004071962021890",
+  "chapterId": "1991004071962022001",
+  "title": "第 1 章测验",
+  "questionIds": [
+    "1991004071962023001",
+    "1991004071962023002"
+  ]
+}
+```
+
+**返回体示例**
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "id": "1991004071962024001",
+    "courseId": "1991004071962021890",
+    "chapterId": "1991004071962022001",
+    "title": "第 1 章测验",
+    "totalScore": 2,
+    "createdBy": "教师ID",
+    "createdTime": "2025-11-28T10:00:00",
+    "updatedTime": "2025-11-28T10:00:00"
+  }
+}
+```
+
+> `totalScore` 第一版可以简单设为题目数量（每题 1 分）2. 查询某章节下的测验列表（教师端）
+
+- **URL**：`GET /api/quiz/manage/quiz/list`
+- **查询参数**
+
+```text
+courseId   String  是
+chapterId  String  是
+```
+
+**返回体示例**
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": [
+    {
+      "id": "1991004071962024001",
+      "title": "第 1 章测验",
+      "totalScore": 2,
+      "createdTime": "2025-11-28T10:00:00"
+    }
+  ]
+}
+```
+
+------
+
+### 3. 查询测验详情（含题目列表，教师视角）
+
+- **URL**：`GET /api/quiz/manage/quiz/detail/{quizId}`
+- **功能**：返回测验基本信息 + 题目简要信息，用于教师确认/编辑。
+
+**返回体示例**
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "id": "1991004071962024001",
+    "courseId": "1991004071962021890",
+    "chapterId": "1991004071962022001",
+    "title": "第 1 章测验",
+    "totalScore": 2,
+    "questions": [
+      {
+        "questionId": "1991004071962023001",
+        "content": "请简要说明 JVM 中堆和栈的区别。",
+        "knowledgePoint": "Java 基础/JVM 内存结构"
+      }
+    ]
+  }
+}
+```
+
+------
+
+### 4. 删除测验
+
+- **URL**：`DELETE /api/quiz/manage/quiz/delete/{quizId}`
+- **功能**：删除测验，并删除 `quiz_question` 中关联记录；可约定不影响历史 `user_quiz_answer` 记录（用于历史统计）。
+
+**返回体示例**
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": true
+}
+```
+
+------
+
+## Day17：学生测验接口（获取试卷）
+
+### 当日目标
+
+- 面向学生端提供“查询试卷详情”的接口：
+  - 学生根据 `quizId` 获取题目列表。
+  - 不暴露标准答案，只给题干和分值。
+
+### 涉及表
+
+- `quiz`
+- `quiz_question`
+- `question`
+
+------
+
+### 1. 学生端查询试卷详情
+
+- **URL**：`GET /api/quiz/student/detail/{quizId}`
+- **功能**：学生进入测验前拉取题目列表。
+
+**返回体示例**
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "quizId": "1991004071962024001",
+    "title": "第 1 章测验",
+    "totalScore": 2,
+    "questions": [
+      {
+        "questionId": "1991004071962023001",
+        "content": "请简要说明 JVM 中堆和栈的区别。",
+        "score": 1,
+        "knowledgePoint": "Java 基础/JVM 内存结构"
+      },
+      {
+        "questionId": "1991004071962023002",
+        "content": "请说明 Java 中垃圾回收的作用。",
+        "score": 1,
+        "knowledgePoint": "Java 基础/GC"
+      }
+    ]
+  }
+}
+```
+
+> 说明：
+>
+> - 题目内容来自 `question.content`
+> - 不返回 `correctAnswer` 和 `analysis` 字段，防止提前泄露答案。
+
+------
+
+## Day18：学生提交答案 + 简单自动判分（简答题）
+
+### 当日目标
+
+- 学生提交测验答案。
+- 写入 `user_quiz_answer` 表。
+- 基于简答题的简单规则判分：
+  - 去掉首尾空格后，`user_answer` 与 `correct_answer` 完全相等则判为正确，得 1 分；否则 0 分。
+- 返回学生本次测验的总分和每题对错情况。
+
+### 涉及表
+
+- `user_quiz_answer`
+- `question`（取 `correct_answer`）
+
+------
+
+### 1. 学生提交测验答案
+
+- **URL**：`POST /api/quiz/student/submit`
+- **请求体示例**
+
+```json
+{
+  "quizId": "1991004071962024001",
   "answers": [
-    {"questionId": 1, "userAnswer": "C"},
-    {"questionId": 2, "userAnswer": "true"},
-    {"questionId": 3, "userAnswer": "public class"},
-    ...
+    {
+      "questionId": "1991004071962023001",
+      "userAnswer": "堆存对象，栈存局部变量和调用栈帧"
+    },
+    {
+      "questionId": "1991004071962023002",
+      "userAnswer": "自动回收不再使用的对象内存"
+    }
   ]
 }
 ```
 
-服务端自动判分：
+- **判分逻辑（第一版简单规则）**：
+  - 对每个答案：
+    - 从 `question` 表查出 `correct_answer`；
+    - `trim(userAnswer)` 与 `trim(correctAnswer)` 完全相等 → `is_correct = true，score = 1`；
+    - 否则 `is_correct = false，score = 0`；
+  - `submit_time` 使用当前时间写入 `user_quiz_answer`。
+  - `totalScore = 所有题 score 之和`。
 
-- SINGLE / TRUE_FALSE：直接对比
-- 多选题：集合比较
-- 简答题：先标记为 incorrect（后续可 AI 自动判分）
-
-返回：
+**返回体示例**
 
 ```json
 {
-  "totalScore": 4,
-  "correctCount": 4,
-  "wrongCount": 1,
-  "details": [
-    {"questionId": 1, "correct": true},
-    {"questionId": 2, "correct": false}
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "quizId": "1991004071962024001",
+    "totalScore": 2,
+    "maxTotalScore": 2,
+    "correctCount": 2,
+    "wrongCount": 0,
+    "details": [
+      {
+        "questionId": "1991004071962023001",
+        "correct": true,
+        "score": 1
+      },
+      {
+        "questionId": "1991004071962023002",
+        "correct": true,
+        "score": 1
+      }
+    ]
+  }
+}
+```
+
+> 同时为每道题插入一条 `user_quiz_answer` 记录，填充 `user_id`（从网关 X-User-Id 获取）、`quiz_id`、`question_id`、`user_answer`、`is_correct`、`score`、`submit_time` 等。
+
+------
+
+## Day19：AI 解题讲解（ai-service 接入）
+
+### 当日目标
+
+- quiz-service 调用 ai-service 的解析接口，给出“AI 解析文字”。
+- 学生在查看做题结果或错题时，可以点击“查看 AI 解析”。
+
+### 涉及服务
+
+- `quiz-service`（封装调用）
+- `ai-service`（对外暴露解析接口）
+
+------
+
+### 1. ai-service：题目解析接口
+
+- **URL（对外）**：`POST /api/ai/explain`
+- **请求体（由 quiz-service 调用时构造）**
+
+```json
+{
+  "questionContent": "请简要说明 JVM 中堆和栈的区别。",
+  "correctAnswer": "堆用于存放对象实例，栈用于存放局部变量和方法调用栈帧……",
+  "userAnswer": "堆存对象，栈存变量和调用栈",
+  "knowledgePoint": "Java 基础/JVM 内存结构"
+}
+```
+
+**返回体示例**
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "analysis": "正确答案需要说明堆用于存放对象实例，栈用于存放局部变量和栈帧。你的回答抓住了主要点，但可以补充说明生命周期和是否线程私有等细节。"
+  }
+}
+```
+
+------
+
+### 2. 学生端：获取某题 AI 解析
+
+- **URL**：`GET /api/quiz/student/explain/{questionId}`
+- **功能**：
+  1. 根据当前用户 & 最近一次测验记录，从 `user_quiz_answer` 查到该题的 `user_answer`
+  2. 从 `question` 表查 `content`、`correct_answer`、`knowledge_point`
+  3. 调用 ai-service `/api/ai/explain`
+  4. 返回 AI 解析文本。
+
+**返回体示例**
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "questionId": "1991004071962023001",
+    "userAnswer": "堆存对象，栈存变量和调用栈",
+    "correctAnswer": "堆用于存放对象实例，栈用于存放局部变量和方法调用栈帧……",
+    "analysisFromAi": "正确答案需要说明堆用于存放对象实例，栈用于存放局部变量和栈帧……"
+  }
+}
+```
+
+------
+
+## Day20：错题本接口
+
+### 当日目标
+
+- 基于 `user_quiz_answer` 提供学生错题本接口：
+  - 查询当前学生所有错误题目（`is_correct = false`），可选支持按时间、知识点过滤。
+  - 为每道错题返回题干、学生答案、标准答案、知识点等。
+
+### 涉及表
+
+- `user_quiz_answer`
+- `question`
+
+------
+
+### 1. 查询错题列表
+
+- **URL**：`GET /api/quiz/student/wrong`
+- **查询参数（可选）**
+
+```text
+knowledgePoint  String  否   按知识点过滤
+sinceDays       Integer 否   仅查询最近 N 天的错题（例如 30）
+```
+
+**返回体示例**（每一项是“最近一次错误记录”）
+
+```json
+{
+  "code": 0,
+  "msg": "success",
+  "data": [
+    {
+      "questionId": "1991004071962023001",
+      "quizId": "1991004071962024001",
+      "content": "请简要说明 JVM 中堆和栈的区别。",
+      "userAnswer": "只写了堆存对象",
+      "correctAnswer": "堆用于存放对象实例，栈用于存放局部变量和方法调用栈帧……",
+      "knowledgePoint": "Java 基础/JVM 内存结构",
+      "lastSubmitTime": "2025-11-30T10:20:00",
+      "score": 0
+    }
   ]
 }
 ```
 
-同时写入 `user_quiz_answer` 表。
-
-> 第 18 天目标：
-> 学生可以正式提交测验，并看到系统判分。
+> 查询逻辑：
+>
+> - 从 `user_quiz_answer` 中筛选当前用户 `user_id`，`is_correct = false`
+> - 按 `submit_time` 倒序；
+> - 按 `question_id` 分组可取最近一次错误记录；
+> - 再关联 `question` 表取 `content`、`correct_answer`、`knowledge_point`。
 
 ------
 
-# **第 19 天：AI 解题讲解功能**
+## Day21：结果查看接口 + 一次测验的总览视图
 
-调用 ai-service：
+### 当日目标
 
-教师无需写解析，学生查错题就能看到 AI 自动生成解释。
+- 给学生提供一个“查看某次测验结果”的接口：
+  - 包含：总分、对错统计、每题详情（题干、学生答案、标准答案、是否正确）。
+- 为前端判分结果页和错题本页提供统一数据源。
 
-## 接口
+### 涉及表
 
-### `POST /ai/explain`
+- `user_quiz_answer`
+- `question`
+- `quiz`
 
-quiz-service 需要封装请求体：
+------
+
+### 1. 学生查看某次测验结果
+
+- **URL**：`GET /api/quiz/student/result/{quizId}`
+- **功能**：
+  - 读取当前学生该 `quizId` 下的所有 `user_quiz_answer` 记录；
+  - 关联 `question` 表补全题干、正确答案；
+  - 汇总总分、对错数量。
+
+**返回体示例**
 
 ```json
 {
-  "questionContent": "...",
-  "correctAnswer": "...",
-  "userAnswer": "...",
-  "knowledgePoint": "Java 集合"
+  "code": 0,
+  "msg": "success",
+  "data": {
+    "quizId": "1991004071962024001",
+    "title": "第 1 章测验",
+    "totalScore": 2,
+    "maxTotalScore": 2,
+    "correctCount": 2,
+    "wrongCount": 0,
+    "details": [
+      {
+        "questionId": "1991004071962023001",
+        "content": "请简要说明 JVM 中堆和栈的区别。",
+        "userAnswer": "堆存对象，栈存变量和调用栈",
+        "correctAnswer": "堆用于存放对象实例，栈用于存放局部变量和方法调用栈帧……",
+        "knowledgePoint": "Java 基础/JVM 内存结构",
+        "score": 1,
+        "isCorrect": true
+      },
+      {
+        "questionId": "1991004071962023002",
+        "content": "请说明 Java 中垃圾回收的作用。",
+        "userAnswer": "自动回收不再使用的对象内存",
+        "correctAnswer": "自动回收不再使用的对象内存",
+        "knowledgePoint": "Java 基础/GC",
+        "score": 1,
+        "isCorrect": true
+      }
+    ]
+  }
 }
 ```
 
-ai-service 返回：
-
-```json
-{
-  "analysis": "正确答案是 C，因为 Java 中创建对象要使用 new 关键字。你的答案 B 不正确……"
-}
-```
-
-## 学生端接口：
-
-### `GET /quiz/student/explain/{questionId}`
-
-逻辑：
-
-1. 查用户这个 question 的 user_answer & correct_answer
-2. 调 ai-service
-3. 返回解析
-
-> 第 19 天目标：
-> 学生可以点击一个按钮 → 获得 AI 解析。
-
-------
-
-# **第 20 天：错题本（收藏错误记录）**
-
-你需要基于 user_quiz_answer 实现：
-
-## `GET /quiz/student/wrong`
-
-返回：
-
-```json
-[
-  {
-    "questionId": 1,
-    "content": "...",
-    "userAnswer": "...",
-    "correctAnswer": "...",
-    "knowledgePoint": "Java 集合"
-  },
-  ...
-]
-```
-
-## 增强功能（选做）
-
-- 近期错题（按时间）
-- 按知识点分类查看错题
-- “再次练习”功能
-
-> 第 20 天目标：
-> 学生可以看到自己的错题本。
-
-------
-
-# **第 21 天：前端测验流程 + UI 联调**
-
-前端要做三大页面：
-
-------
-
-### 1）测验开始页
-
-从章节详情页进入：
-
-- 显示测验标题
-- 点击“开始答题”
-
-### 2）答题页
-
-- 单选题：单选按钮
-- 判断题：true / false
-- 简答题：文本框
-- 底部按钮：提交试卷
-
-### 3）判分结果页
-
-- 显示得分与统计
-- 每题是否正确
-- “查看 AI 解析”按钮
-
-### 4）错题本页面
-
-- 列表展示错题
-- 可以点击查看解析
-
-> 第 21 天完成标志：
-> 完整体验：进入测验 → 答题 → 判分 → AI 解析 → 错题本。
+> 前端可以：
+>
+> - 在“判分结果页”使用此接口；
+> - 在错题本点击某次测验时跳转到结果页；
+> - 每题附带“查看 AI 解析”按钮 → 调 `GET /api/quiz/student/explain/{questionId}`（Day19）。
 

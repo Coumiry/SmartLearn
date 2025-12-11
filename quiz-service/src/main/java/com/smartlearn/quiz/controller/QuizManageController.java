@@ -3,10 +3,9 @@ package com.smartlearn.quiz.controller;
 import com.smartlearn.common.response.R;
 import com.smartlearn.quiz.dto.QuizCreateDTO;
 import com.smartlearn.quiz.service.QuizManageService;
+import com.smartlearn.quiz.vo.QuizCreateResponseVO;
 import jakarta.annotation.Resource;
 import org.springframework.web.bind.annotation.*;
-
-import java.util.Map;
 
 @RestController
 @RequestMapping("/quiz/manage")
@@ -24,8 +23,20 @@ public class QuizManageController {
             return R.fail("无权限");
         }
 
-        String quizId = quizManageService.createQuiz(dto, teacherId);
-        return R.ok(Map.of("id", quizId));
+        QuizCreateResponseVO response = quizManageService.createQuiz(dto, teacherId);
+        return R.ok(response);
+    }
+
+    @GetMapping("/quiz/list")
+    public R<?> listQuizzes(@RequestParam String courseId,
+                            @RequestParam String chapterId,
+                            @RequestHeader("X-User-Role") String role) {
+
+        if (!"TEACHER".equals(role) && !"ADMIN".equals(role)) {
+            return R.fail("无权限");
+        }
+
+        return R.ok(quizManageService.listByChapter(chapterId));
     }
 
     @GetMapping("/{chapterId}/list")
@@ -48,5 +59,17 @@ public class QuizManageController {
         }
 
         return R.ok(quizManageService.detail(quizId));
+    }
+
+    @DeleteMapping("/quiz/delete/{quizId}")
+    public R<?> deleteQuiz(@PathVariable String quizId,
+                           @RequestHeader("X-User-Role") String role) {
+
+        if (!"TEACHER".equals(role) && !"ADMIN".equals(role)) {
+            return R.fail("无权限");
+        }
+
+        boolean deleted = quizManageService.deleteQuiz(quizId);
+        return R.ok(deleted);
     }
 }
